@@ -33,128 +33,128 @@ package Conjury::Core::Prototype;
 use Carp qw/&croak/;
 
 sub new($%) {
-	my ($this) = @_;
+    my ($this) = @_;
 
-	croak __PACKAGE__, '::new-- unexpected arguments' if (@_ > 1);
-	
-	my $class = ref $this || $this;
-	$this =
-	  {Required => { },
-	   Optional => { }};
+    croak __PACKAGE__, '::new-- unexpected arguments' if (@_ > 1);
+    
+    my $class = ref $this || $this;
+    $this =
+      {Required => { },
+       Optional => { }};
 
-	bless $this, $class;
+    bless $this, $class;
 }
 
 sub required_arg {
-	my ($this, $key, $value) = @_;
-	croak __PACKAGE__, "::required_arg-- '$key' not a SCALAR"
-	  unless (defined $key and !ref $key);
-	croak __PACKAGE__, "::required_arg-- '$value' not a CODE reference"
-	  unless (defined $value and ref $value eq 'CODE');
-	croak __PACKAGE__, "::required_arg-- '$key' already an argument"
-	  unless (!exists $this->{Required}{$key}
-			  and !exists $this->{Optional}{$key});
+    my ($this, $key, $value) = @_;
+    croak __PACKAGE__, "::required_arg-- '$key' not a SCALAR"
+      unless (defined $key and !ref $key);
+    croak __PACKAGE__, "::required_arg-- '$value' not a CODE reference"
+      unless (defined $value and ref $value eq 'CODE');
+    croak __PACKAGE__, "::required_arg-- '$key' already an argument"
+      unless (!exists $this->{Required}{$key}
+	      and !exists $this->{Optional}{$key});
 
-	$this->{Required}{$key} = $value;
-	undef;
+    $this->{Required}{$key} = $value;
+    undef;
 }
 
 sub optional_arg {
-	my ($this, $key, $value) = @_;
-	croak __PACKAGE__, "::optional_arg-- '$key' not a SCALAR"
-	  unless (defined $key and !ref $key);
-	croak __PACKAGE__, "::optional_arg-- '$value' not a CODE reference"
-	  unless (defined $value and ref $value eq 'CODE');
+    my ($this, $key, $value) = @_;
+    croak __PACKAGE__, "::optional_arg-- '$key' not a SCALAR"
+      unless (defined $key and !ref $key);
+    croak __PACKAGE__, "::optional_arg-- '$value' not a CODE reference"
+      unless (defined $value and ref $value eq 'CODE');
 
-	$this->{Optional}{$key} = $value;
-	undef;
+    $this->{Optional}{$key} = $value;
+    undef;
 }
 
 sub validate {
-	my ($this, $argvref) = @_;
-	croak __PACKAGE__, "::validate-- argument mismatch"
-	  unless (ref $this
-			  and defined $argvref
-			  and ref $argvref eq 'HASH'
-			  and $this->UNIVERSAL::isa('Conjury::Core::Prototype'));
+    my ($this, $argvref) = @_;
+    croak __PACKAGE__, "::validate-- argument mismatch"
+      unless (ref $this
+	      and defined $argvref
+	      and ref $argvref eq 'HASH'
+	      and $this->UNIVERSAL::isa('Conjury::Core::Prototype'));
 
-	my $result = undef;
+    my $result = undef;
 
-	if (scalar keys %$argvref) {
-		my ($key, $value);
+    if (scalar keys %$argvref) {
+	my ($key, $value);
 
-		my %required_arg = %{$this->{Required}};
-		my %optional_arg = %{$this->{Optional}};
+	my %required_arg = %{$this->{Required}};
+	my %optional_arg = %{$this->{Optional}};
 
-		while (($key, $value) = each %$argvref) {
-			unless (exists $this->{Required}{$key}
-					or exists $this->{Optional}{$key}) {
-				$result = "'$key' unexpected argument";
-				last;
-			}
+	while (($key, $value) = each %$argvref) {
+	    unless (exists $this->{Required}{$key}
+		    or exists $this->{Optional}{$key}) {
+		$result = "'$key' unexpected argument";
+		last;
+	    }
 
-			my $function = undef;
-			if (exists $required_arg{$key}) {
-				$function = $required_arg{$key};
-				delete $required_arg{$key};
-			}
-			elsif (exists $optional_arg{$key}) {
-				$function = $optional_arg{$key};
-				delete $optional_arg{$key};
-				next if (!defined $value);
-			}
-			else {
-				$result = "'$key' used multiple times";
-				last;
-			}
+	    my $function = undef;
+	    if (exists $required_arg{$key}) {
+		$function = $required_arg{$key};
+		delete $required_arg{$key};
+	    }
+	    elsif (exists $optional_arg{$key}) {
+		$function = $optional_arg{$key};
+		delete $optional_arg{$key};
+		next if (!defined $value);
+	    }
+	    else {
+		$result = "'$key' used multiple times";
+		last;
+	    }
 
-			my $error = &$function($value);
-			if ($error) {
-				$result = "'$key' $error";
-				last;
-			}
-		}
+	    my $error = &$function($value);
+	    if ($error) {
+		$result = "'$key' $error";
+		last;
+	    }
 	}
+    }
 
-	return $result;
+    return $result;
 }
 
 sub validate_scalar {
-	my ($x, $y) = (shift, undef);
-	$y = 'not a SCALAR' unless (defined $x and !ref $x);
-	return $y
+    my ($x, $y) = (shift, undef);
+    $y = 'not a SCALAR' unless (defined $x and !ref $x);
+    return $y
 }
 
 sub validate_hash {
-	my ($x, $y) = (shift, undef);
-	$y = 'not a HASH' unless (ref $x eq 'HASH');
-	return $y
+    my ($x, $y) = (shift, undef);
+    $y = 'not a HASH' unless (ref $x eq 'HASH');
+    return $y
 }
 
 sub validate_array {
-	my ($x, $y) = (shift, undef);
-	$y = 'not an ARRAY' unless (ref $x eq 'ARRAY');
-	return $y
+    my ($x, $y) = (shift, undef);
+    $y = 'not an ARRAY' unless (ref $x eq 'ARRAY');
+    return $y
 }
 
 sub validate_hash_of_scalars {
-	my ($x, $y) = (shift, undef);
-	$y = 'not a HASH of SCALAR values'
-	  unless (ref $x eq 'HASH' and !(grep ref, values(%$x))); 
-	return $y;
+    my ($x, $y) = (shift, undef);
+    $y = 'not a HASH of SCALAR values'
+      unless (ref $x eq 'HASH' and !(grep ref, values(%$x))); 
+    return $y;
 }
 
 sub validate_array_of_scalars {
-	my ($x, $y) = (shift, undef);
-	$y = 'not an ARRAY of SCALAR values'
-	  unless (ref $x eq 'ARRAY' and !(grep ref, @$x)); 
-	return $y;
+    my ($x, $y) = (shift, undef);
+    $y = 'not an ARRAY of SCALAR values'
+      unless (ref $x eq 'ARRAY' and !(grep ref, @$x)); 
+    return $y;
 }
 
 sub validate_code {
-	my ($x, $y) = (shift, undef);
-	$y = 'not a CODE' unless (ref $x eq 'CODE');
-	return $y
+    my ($x, $y) = (shift, undef);
+    $y = 'not a CODE' unless (ref $x eq 'CODE');
+    return $y
 }
 
 1;
@@ -174,26 +174,26 @@ Conjury::Core::Prototype - function prototype checking in Conjury
 
   $prototype->required_arg
     (foo_arg1 => sub {
-	     my ($x, $y) = (shift, undef);
-		 $y = 'not a HASH reference' unless (ref $x eq 'HASH');
-		 return $y;
-	 });
+	 my ($x, $y) = (shift, undef);
+	 $y = 'not a HASH reference' unless (ref $x eq 'HASH');
+	 return $y;
+     });
 
   $prototype->optional_arg
-	 foo_arg2 => sub {
-	     my ($x, $y) = (shift, undef);
-		 $y = 'not a CODE reference' unless (ref $x eq 'CODE');
-		 return $y;
-	 });
+     foo_arg2 => sub {
+	 my ($x, $y) = (shift, undef);
+	 $y = 'not a CODE reference' unless (ref $x eq 'CODE');
+	 return $y;
+     });
 
   sub foo($%) {
-	  my ($this, %arg) = @_;
-	  my $error = $prototype->validate(\%arg);
-	  croak __PACKAGE__, "::foo-- $error" if $error;
+      my ($this, %arg) = @_;
+      my $error = $prototype->validate(\%arg);
+      croak __PACKAGE__, "::foo-- $error" if $error;
 
-	  # use $arg{foo_arg1} with confidence that it exists and its value
-	  # is a HASH reference, and that $arg{foo_arg2} either does not exist,
-	  # or it exists and its value is a CODE reference.
+      # use $arg{foo_arg1} with confidence that it exists and its value
+      # is a HASH reference, and that $arg{foo_arg2} either does not exist,
+      # or it exists and its value is a CODE reference.
   }
 
 =head1 DESCRIPTION

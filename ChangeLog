@@ -1,3 +1,27 @@
+2001-04-30  james woodyatt  <jhw@wetware.com>
+
+	* (lib/Conjury/Core.pm): Removed the Conjury::Core::Stage package
+        to be a separate module in the Conjury bundle.  This means the
+        'find_stage' function is moved too.
+        * Implemented 'Glob' argument to the 'dispell' function.
+        * Removed support for the --undo option, which was not as well
+        designed as one would hope.  The new 'dispell' spell is the right
+        thing to use now. 
+
+2001-03-24  james woodyatt  <jhw@wetware.com>
+
+	*  (lib/*/*.pm): Fixed issues with whitespace to make the source
+        code more friendly to a wider audience. 
+
+2000-09-15  james woodyatt  <jhw@wetware.com>
+
+	*  (lib/Conjury/Core.pm): Made each Conjury.pl execute in a
+	separate temporary package.  This keeps namespace pollution from
+	becoming a major problem.
+
+	*  (lib/Conjury/Core.pm): Fixed a typo and improved the POD a
+	little.
+
 2000-04-19  james woodyatt  <jhw@wetware.com>
 
 	* (lib/Conjury/Core.pm): PUBLISHED TO CPAN-- $VERSION=1.003

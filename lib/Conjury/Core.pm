@@ -41,9 +41,6 @@ Conjury::Core - the foundation of Perl Conjury
 
   tie I<HASH>, Conjury::Core::Journal, F<filename>;
 
-  $stage = Conjury::Core::Stage->new ( I<HASH> );
-  $stage->make_subdir ( F<filename> );
-
   $spell = Conjury::Core::Spell->new ( I<HASH> );
 
   cast_warning ( I<LIST> );
@@ -52,8 +49,6 @@ Conjury::Core - the foundation of Perl Conjury
   [$spell =] name_spell ( I<HASH> );
 
   @spells = fetch_spells ( I<HASH> );
-
-  ($basedir, $subdir) = find_stage ( F<directory> );
 
   $spell = Conjury::Core::deferral ( I<HASH> );
 
@@ -69,8 +64,8 @@ other Perl Conjury modules, especially application-specific ones referenced in
 your F<Conjury.pl> files.
 
 In addition to some exported functions, there are four Perl packages in the
-C<Conjury::Core> namespace: Conjury::Core::Context, Conjury::Core::Journal,
-Conjury::Core::Stage and Conjury::Core::Spell.
+C<Conjury::Core> namespace: Conjury::Core::Context, Conjury::Core::Journal and
+Conjury::Core::Spell.
 
 =cut
 
@@ -79,96 +74,90 @@ my (%prototype, %validator);
 package Conjury::Core;
 
 BEGIN {
-	require Conjury::Core::Prototype;
-	use Exporter ();
+    require Conjury::Core::Prototype;
+    use Exporter ();
 
-	use vars qw($VERSION @ISA @EXPORT_OK @EXPORT %EXPORT_TAGS);
+    use vars qw($VERSION @ISA @EXPORT_OK @EXPORT %EXPORT_TAGS);
 
-	$VERSION = 1.003;
-	@ISA = qw(Exporter);
-	@EXPORT_OK = qw(%Option $Top_Context $Current_Context %Context_By_Directory
-					%Stage_By_Directory %Spell_By_FileSpec &filecopy
-					&deferral &dispell);
-	@EXPORT = qw(&cast_warning &cast_error &name_spell &fetch_spells
-				 &find_stage);
+    $VERSION = 1.004;
+    @ISA = qw(Exporter);
+    @EXPORT_OK = qw(%Option $Top_Context $Current_Context %Context_By_Directory
+		    %Spell_By_FileSpec &filecopy &deferral &dispell);
+    @EXPORT = qw(&cast_warning &cast_error &name_spell &fetch_spells);
 }
 
 use subs qw(cast_warning cast_error execute name_spell fetch_spells
-			find_stage deferral filecopy dispell);
+	    deferral filecopy dispell);
 use vars qw(%Option $Top_Context $Current_Context %Context_By_Directory
-			%Stage_By_Directory %Spell_By_FileSpec);
+	    %Spell_By_FileSpec);
 
 %Option = ( );
 $Top_Context = undef;
 $Current_Context = undef;
 %Context_By_Directory = ( );
-%Stage_By_Directory = ( );
 %Spell_By_FileSpec = ( );
 
 BEGIN {
-	$validator{scalar_or_hash} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a SCALAR or a HASH'
-		  unless (defined $x and (!ref $x or ref $x eq 'HASH'));
-		return $y;
-	};
+    $validator{scalar_or_hash} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a SCALAR or a HASH'
+	  unless (defined $x and (!ref $x or ref $x eq 'HASH'));
+	return $y;
+    };
 
-	$validator{scalar_or_array_of_scalar} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a SCALAR or an ARRAY of SCALAR'
-		  unless ((defined $x and !ref $x)
-				  or (ref $x eq 'ARRAY' and !(grep ref, @$x)));
-		return $y;
-	};
+    $validator{scalar_or_array_of_scalar} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a SCALAR or an ARRAY of SCALAR'
+	  unless ((defined $x and !ref $x)
+		  or (ref $x eq 'ARRAY' and !(grep ref, @$x)));
+	return $y;
+    };
 
-	$validator{scalar_or_code} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a SCALAR or CODE'
-		  unless (defined $x and  (!ref $x or ref $x eq 'CODE'));
-		return $y;
-	};
+    $validator{scalar_or_code} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a SCALAR or CODE'
+	  unless (defined $x and  (!ref $x or ref $x eq 'CODE'));
+	return $y;
+    };
 
-	$validator{scalar_array_or_code} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a SCALAR, ARRAY of SCALAR, or CODE'
-		  unless (defined $x
-				  and (!ref $x
-					   or (ref $x eq 'ARRAY' and !(grep ref, @$x))
-					   or ref $x eq 'CODE'));
-		return $y;
-	};
+    $validator{scalar_array_or_code} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a SCALAR, ARRAY of SCALAR, or CODE'
+	  unless (defined $x
+		  and (!ref $x
+		       or (ref $x eq 'ARRAY' and !(grep ref, @$x))
+		       or ref $x eq 'CODE'));
+	return $y;
+    };
 
-	$validator{context_object} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a Conjury::Core::Context object'
-		  unless (ref $x and $x->UNIVERSAL::isa('Conjury::Core::Context'));
-		return $y;
-	};
+    $validator{context_object} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a Conjury::Core::Context object'
+	  unless (ref $x and $x->UNIVERSAL::isa('Conjury::Core::Context'));
+	return $y;
+    };
 
-	$validator{spell_object} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not a Conjury::Core::Context object'
-		  unless (ref $x and $x->UNIVERSAL::isa('Conjury::Core::Spell'));
-		return $y;
-	};
+    $validator{spell_object} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not a Conjury::Core::Spell object'
+	  unless (ref $x and $x->UNIVERSAL::isa('Conjury::Core::Spell'));
+	return $y;
+    };
 
-	$validator{array_of_2_scalars} = sub {
-		my ($x, $y) = (shift, undef);
-		$y = 'not an ARRAY of 2 SCALAR values, i.e. [ user, group ]'
-		  unless (ref $x eq 'ARRAY' and @$x == 2 and !(grep ref, @$x));
-		return $y;
-	};
+    $validator{array_of_2_scalars} = sub {
+	my ($x, $y) = (shift, undef);
+	$y = 'not an ARRAY of 2 SCALAR values, i.e. [ user, group ]'
+	  unless (ref $x eq 'ARRAY' and @$x == 2 and !(grep ref, @$x));
+	return $y;
+    };
 
 }
 
-=pod
-
-=cut
 
 package Conjury::Core::Context;
 
 use Conjury::Core qw(%Option $Top_Context $Current_Context
-					 %Context_By_Directory %Spell_By_FileSpec &cast_error);
+		     %Context_By_Directory %Spell_By_FileSpec &cast_error);
 use File::Spec;
 use File::Basename qw(fileparse);
 use Cwd qw(chdir getcwd abs_path);
@@ -197,163 +186,180 @@ reference to the context at the top of the source file hierarchy.
 
 =cut
 
-sub _new_f()	{ __PACKAGE__ . '::new'	}
+sub _new_f()    { __PACKAGE__ . '::new' }
 
 BEGIN {
-	my $proto;
+    my $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Directory => \&Conjury::Core::Prototype::validate_scalar);
-	$proto->optional_arg
-	  (Spells_By_Name => \&Conjury::Core::Prototype::validate_hash);
-	$proto->optional_arg
-	  (Default_Spells => \&Conjury::Core::Prototype::validate_code);
-	$prototype{_new_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Directory => \&Conjury::Core::Prototype::validate_scalar);
+    $proto->optional_arg
+      (Spells_By_Name => \&Conjury::Core::Prototype::validate_hash);
+    $proto->optional_arg
+      (Default_Spells => \&Conjury::Core::Prototype::validate_code);
+    $prototype{_new_f()} = $proto;
 }
 
+my $compile_index = 0;
+
 my $compile_spells_file = sub {
-	my $self = shift;
+    my $self = shift;
 
-	my $verbose = exists $Option{'verbose'};
-	my $directory = $self->{Directory};
+    my $verbose = exists $Option{'verbose'};
+    my $directory = $self->{Directory};
 
-	$Context_By_Directory{$directory} = $self;
+    $Context_By_Directory{$directory} = $self;
 
-	my @candidates = ( );
-	@candidates = qw(Conjury.pl) if $^O =~ /\A(MacOS|AmigaOS|MSWin32)\Z/;
-	@candidates = qw(CONJURY.PL) if $^O eq 'VMS';
-	@candidates = qw(conjury.pl Conjury.pl) if @candidates == 0;
+    my @candidates = ( );
+    @candidates = qw(Conjury.pl)
+	if $^O =~ /\A(MacOS|AmigaOS|MSWin32|darwin)\Z/;
+    @candidates = qw(CONJURY.PL) if $^O eq 'VMS';
+    @candidates = qw(conjury.pl Conjury.pl) if @candidates == 0;
 
-	my $filename = undef;
-	my $full_filename = undef;
-	for my $candidate (@candidates) {
-		my $full_candidate = File::Spec->catfile($directory, $candidate);
+    my $filename = undef;
+    my $full_filename = undef;
+    for my $candidate (@candidates) {
+	my $full_candidate = File::Spec->catfile($directory, $candidate);
 
-		if (-f $full_candidate) {
-			warn
-				"$0 warning: Found both '$filename' and '$candidate' in",
-				" $directory --\n\tusing '$candidate'"
-					if (defined($filename));
-	
-			$filename = $candidate;
-			$full_filename = $full_candidate;
-		}
+	if (-f $full_candidate) {
+	    warn
+		"$0 warning: Found both '$filename' and '$candidate' in",
+		" $directory --\n\tusing '$candidate'"
+		    if (defined($filename));
+    
+	    $filename = $candidate;
+	    $full_filename = $full_candidate;
 	}
+    }
 
-	if (!defined($filename)) {
-		my $message = (@candidates > 1) ? 'No files ' : 'No file ';
-		$message .= join(' or ', (map "'$_'", @candidates));
-		die "$0: $message in '$directory'.\n";
-	}
+    if (!defined($filename)) {
+	my $message = (@candidates > 1) ? 'No files ' : 'No file ';
+	$message .= join(' or ', (map "'$_'", @candidates));
+	die "$0: $message in '$directory'.\n";
+    }
 
-	my @save = $self->push;
-	require File::Spec->catfile($directory, $filename);
+    open SPELLSFILE, "$full_filename"
+      || die "$0 error: Unable to read $full_filename ($!)";
+    my $spellsfile = join '', <SPELLSFILE>;
+    close SPELLSFILE;
+
+    ++$compile_index;
+
+    my @save = $self->push;
+    eval "package Conjury::Core::Tmp${compile_index}; $spellsfile";
+    my $error = $@;
     $self->pop(@save);
 
-	undef;
+    if ($error) {
+	print $error;
+	print "$0 error: Compiling $full_filename failed.\n";
+	exit -1;
+    }
+
+    undef;
 };
 
 sub new {
-	my ($class, %arg) = @_;
-	my $error = $prototype{_new_f()}->validate(\%arg);
-	croak _new_f, "-- $error" if $error;
+    my ($class, %arg) = @_;
+    my $error = $prototype{_new_f()}->validate(\%arg);
+    croak _new_f, "-- $error" if $error;
 
-	my $directory = $arg{Directory};
-	$directory = File::Spec->curdir unless (defined $directory);
-	my %spells_hash;
-	%spells_hash = ( %{$arg{Spells_By_Name}} )
-	  if (exists $arg{Spells_By_Name});
-	my @spells_list;
-	@spells_list = @{$arg{Default_Spells}} if (exists $arg{Default_Spells});
+    my $directory = $arg{Directory};
+    $directory = File::Spec->curdir unless (defined $directory);
+    my %spells_hash;
+    %spells_hash = ( %{$arg{Spells_By_Name}} )
+      if (exists $arg{Spells_By_Name});
+    my @spells_list;
+    @spells_list = @{$arg{Default_Spells}} if (exists $arg{Default_Spells});
 
-	my $self = { };
-	bless $self, $class;
+    my $self = { };
+    bless $self, $class;
 
-	$self->{Directory} = $directory;
-	$self->{Spells_By_Name} = \%spells_hash;
-	$self->{Default_Spells} = \@spells_list;
+    $self->{Directory} = $directory;
+    $self->{Spells_By_Name} = \%spells_hash;
+    $self->{Default_Spells} = \@spells_list;
 
-	$Top_Context = $self unless defined($Top_Context);
+    $Top_Context = $self unless defined($Top_Context);
 
-	&$compile_spells_file($self);
+    &$compile_spells_file($self);
 
-	return $self;
+    return $self;
 }
 
 sub AUTOLOAD {
-	my $field = $AUTOLOAD;
-	$field =~ s/.*:://;
-	my ($self, $set) = @_;
+    my $field = $AUTOLOAD;
+    $field =~ s/.*:://;
+    my ($self, $set) = @_;
 
-	croak __PACKAGE__, "::$field-- argument mismatch"
-		unless ((@_ == 1 || @_ == 2) && ref($self));
-	croak __PACKAGE__, "::$field-- no field exists"
-		unless exists($self->{$field});
-	
-	$self->{$field} = $set if defined($set);
-	return $self->{$field};
+    croak __PACKAGE__, "::$field-- argument mismatch"
+	unless ((@_ == 1 || @_ == 2) && ref($self));
+    croak __PACKAGE__, "::$field-- no field exists"
+	unless exists($self->{$field});
+    
+    $self->{$field} = $set if defined($set);
+    return $self->{$field};
 }
 
 sub DESTROY { }
 
 sub push {
-	my $self = shift;
-	croak __PACKAGE__, '::push-- argument mismatch'
-	  unless (!@_ && ref($self));
+    my $self = shift;
+    croak __PACKAGE__, '::push-- argument mismatch'
+      unless (!@_ && ref($self));
 
-	return ( undef, undef )
-	  if (defined($Current_Context) && $self == $Current_Context);
+    return ( undef, undef )
+      if (defined($Current_Context) && $self == $Current_Context);
 
-	my $old_context = $Current_Context;
+    my $old_context = $Current_Context;
 
-	my $old_directory
-	  = defined($old_context) ? $old_context->Directory : getcwd;
+    my $old_directory
+      = defined($old_context) ? $old_context->Directory : getcwd;
 
-	my $new_directory = $self->{Directory};
+    my $new_directory = $self->{Directory};
 
-	print "Context[>>]: $new_directory\n" if exists($Option{'verbose'});
-	chdir $new_directory
-		|| cast_error "Unable to change to directory '$new_directory'.";
+    print "Context[>>]: $new_directory\n" if exists($Option{'verbose'});
+    chdir $new_directory
+	|| cast_error "Unable to change to directory '$new_directory'.";
 
-	$Current_Context = $self;
+    $Current_Context = $self;
 
-	return ($old_directory, $old_context);
+    return ($old_directory, $old_context);
 }
 
 sub pop {
-	croak __PACKAGE__, '::pop-- no context to pop'
-		unless defined($Current_Context);
+    croak __PACKAGE__, '::pop-- no context to pop'
+	unless defined($Current_Context);
 
-	my ($self, $new_directory, $new_context) = @_;
-	croak __PACKAGE__, '::pop-- argument mismatch'
-		unless ((@_ == 3)
-				&& (ref($new_context) || !defined($new_context))
-				&& (!ref($new_directory) || !defined($new_directory)));
-	return undef if !defined($new_directory);
+    my ($self, $new_directory, $new_context) = @_;
+    croak __PACKAGE__, '::pop-- argument mismatch'
+	unless ((@_ == 3)
+		&& (ref($new_context) || !defined($new_context))
+		&& (!ref($new_directory) || !defined($new_directory)));
+    return undef if !defined($new_directory);
 
-	my $old_directory = $Current_Context->{Directory};
+    my $old_directory = $Current_Context->{Directory};
 
-	$Current_Context = $new_context;
+    $Current_Context = $new_context;
 
-	print "Context[<<]: $old_directory\n" if exists($Option{'verbose'});
-	chdir $new_directory
-		|| cast_error "Unable to change to directory '$new_directory'.";
+    print "Context[<<]: $old_directory\n" if exists($Option{'verbose'});
+    chdir $new_directory
+	|| cast_error "Unable to change to directory '$new_directory'.";
 
-	undef;
+    undef;
 }
 
 sub in_context {
-	my $self = shift;
-	croak __PACKAGE__, '::in_context-- argument mismatch'
-		unless (ref($self) && @_ > 0);
-	croak __PACKAGE__, '::in_context-- array context required'
-		unless (@_ == 1 || wantarray);
+    my $self = shift;
+    croak __PACKAGE__, '::in_context-- argument mismatch'
+	unless (ref($self) && @_ > 0);
+    croak __PACKAGE__, '::in_context-- array context required'
+	unless (@_ == 1 || wantarray);
 
-	my ($dummy,$dirname)
-		= fileparse(File::Spec->catfile($self->{Directory}, 'x'));
-	my @result = map { $_ = $1 if /^$dirname(.*)$/o } @_;
-	return wantarray ? @result : $result[0];
+    my ($dummy,$dirname)
+	= fileparse(File::Spec->catfile($self->{Directory}, 'x'));
+    my @result = map { $_ = $1 if /^$dirname(.*)$/o } @_;
+    return wantarray ? @result : $result[0];
 }
 
 
@@ -382,309 +388,161 @@ to write.
 =cut
 
 my $fetch_hash = sub {
-	my $filename = shift;
+    my $filename = shift;
 
-	my %by_name = ( );
-	my ($signature, $name);
+    my %by_name = ( );
+    my ($signature, $name);
 
-	my $verbose = exists $Option{'verbose'};
+    my $verbose = exists $Option{'verbose'};
 
-	if (open JOURNAL, $filename) {
-		print "Journal: Reading $filename ...\n" if $verbose;
+    if (open JOURNAL, $filename) {
+	print "Journal: Reading $filename ...\n" if $verbose;
 
-		while (<JOURNAL>) {
-			chomp;
-			my ($operation, $signature, $name) = split('\s+', $_, 3);
-			next unless (defined($signature) && defined($name));
-			if ($operation eq '+') {
-				$by_name{$name} = $signature;
-				print "  + $name\n" if $verbose;
-			}
-			elsif ($operation eq '-') {
-				delete $by_name{$name};
-				print "  - $name\n" if $verbose;
-			}
-		}
-
-		close JOURNAL;
-	}
-	elsif ($verbose) {
-		cast_warning "Failed to read journal $filename";
-	}
-
-	return \%by_name;
-};
-
-my $store_hash = sub {
-	my ($filename, $by_name) = @_;
-
-	my $verbose = exists $Option{'verbose'};
-
-	unlink $filename
-		|| cast_warning "Failed to unlink journal $filename";
-	open JOURNAL, ">$filename"
-		|| cast_error "Failed to write journal $filename";
-
-	print "Journal: Writing $filename ...\n" if $verbose;
-
-	unless (!keys %$by_name) {
-		my ($name, $signature);
-		while (($name, $signature) = each %$by_name) {
-			next unless (defined($signature));
-			print JOURNAL "+ $signature $name\n";
-			print "  $name\n" if $verbose;
-		}
+	while (<JOURNAL>) {
+	    chomp;
+	    my ($operation, $signature, $name) = split('\s+', $_, 3);
+	    next unless (defined($signature) && defined($name));
+	    if ($operation eq '+') {
+		$by_name{$name} = $signature;
+		print "  + $name\n" if $verbose;
+	    }
+	    elsif ($operation eq '-') {
+		delete $by_name{$name};
+		print "  - $name\n" if $verbose;
+	    }
 	}
 
 	close JOURNAL;
+    }
+    elsif ($verbose) {
+	cast_warning "Failed to read journal $filename";
+    }
+
+    return \%by_name;
+};
+
+my $store_hash = sub {
+    my ($filename, $by_name) = @_;
+
+    my $verbose = exists $Option{'verbose'};
+
+    unlink $filename
+	|| cast_warning "Failed to unlink journal $filename";
+    open JOURNAL, ">$filename"
+	|| cast_error "Failed to write journal $filename";
+
+    print "Journal: Writing $filename ...\n" if $verbose;
+
+    unless (!keys %$by_name) {
+	my ($name, $signature);
+	while (($name, $signature) = each %$by_name) {
+	    next unless (defined($signature));
+	    print JOURNAL "+ $signature $name\n";
+	    print "  $name\n" if $verbose;
+	}
+    }
+
+    close JOURNAL;
 };
 
 sub TIEHASH {
-	my ($class, $filename) = @_;
-	croak __PACKAGE__, '::TIEHASH-- argument mismatch'
-		unless (@_ == 2 && !ref($filename));
+    my ($class, $filename) = @_;
+    croak __PACKAGE__, '::TIEHASH-- argument mismatch'
+	unless (@_ == 2 && !ref($filename));
 
-	$filename = File::Spec->catfile($Current_Context->Directory, $filename)
-		unless File::Spec->file_name_is_absolute($filename);
+    $filename = File::Spec->catfile($Current_Context->Directory, $filename)
+	unless File::Spec->file_name_is_absolute($filename);
 
-	my $by_name = &$fetch_hash($filename);
-	&$store_hash($filename, $by_name);
+    my $by_name = &$fetch_hash($filename);
+    &$store_hash($filename, $by_name);
 
-	my $self = { };
+    my $self = { };
 
-	$self->{Filename} = $filename;
-	$self->{By_Name} = $by_name;
+    $self->{Filename} = $filename;
+    $self->{By_Name} = $by_name;
 
-	return bless $self, $class;
+    return bless $self, $class;
 }
 
 sub STORE {
-	my ($self, $key, $value) = @_;
+    my ($self, $key, $value) = @_;
 
-	croak __PACKAGE__, '::STORE-- argument mismatch'
-		unless (@_ == 3 && defined($key) && !ref($key) && ($key ne '')
-				&& defined($value) && !ref($value) && ($value !~ /\s/));
+    croak __PACKAGE__, '::STORE-- argument mismatch'
+	unless (@_ == 3 && defined($key) && !ref($key) && ($key ne '')
+		&& defined($value) && !ref($value) && ($value !~ /\s/));
 
-	$self->{By_Name}->{$key} = $value;
+    $self->{By_Name}->{$key} = $value;
 
-	my $file = $self->{Filename};
-	if (open JOURNAL, ">>$file") {
-		print JOURNAL "+ $value $key\n";
-		close JOURNAL;
-	}
-	else {
-		my $filename = $self->{Filename};
-		cast_error "File to append journal $filename";
-	}
+    my $file = $self->{Filename};
+    if (open JOURNAL, ">>$file") {
+	print JOURNAL "+ $value $key\n";
+	close JOURNAL;
+    }
+    else {
+	my $filename = $self->{Filename};
+	cast_error "File to append journal $filename";
+    }
 
-	return $value;
+    return $value;
 }
 
 sub FETCH {
-	return $_[0]->{By_Name}->{$_[1]};
+    return $_[0]->{By_Name}->{$_[1]};
 }
 
 sub FIRSTKEY {
-	my $by_name = $_[0]->{By_Name};
-	my $a = scalar keys %$by_name;
-	return each %$by_name;
+    my $by_name = $_[0]->{By_Name};
+    my $a = scalar keys %$by_name;
+    return each %$by_name;
 }
 
 sub NEXTKEY {
-	return each %{$_[0]->{By_Name}};
+    return each %{$_[0]->{By_Name}};
 }
 
 sub EXISTS {
-	return exists $_[0]->{By_Name}->{$_[1]};
+    return exists $_[0]->{By_Name}->{$_[1]};
 }
 
 sub DELETE {
-	my ($self, $key) = @_;
+    my ($self, $key) = @_;
 
-	croak __PACKAGE__, '::DELETE-- argument mismatch'
-		unless (@_ == 2 && defined($key) && !ref($key) && ($key ne ''));
+    croak __PACKAGE__, '::DELETE-- argument mismatch'
+	unless (@_ == 2 && defined($key) && !ref($key) && ($key ne ''));
 
-	my $result = $self->{By_Name}->{$key};
-	delete $self->{By_Name}->{$key};
+    my $result = $self->{By_Name}->{$key};
+    delete $self->{By_Name}->{$key};
 
-	my $file = $self->{Filename};
-	if (open JOURNAL, ">>$file") {
-		print JOURNAL "- - $key\n";
-		close JOURNAL;
-	}
-	else {
-		my $filename = $self->{Filename};
-		cast_error "File to append journal $filename";
-	}
+    my $file = $self->{Filename};
+    if (open JOURNAL, ">>$file") {
+	print JOURNAL "- - $key\n";
+	close JOURNAL;
+    }
+    else {
+	my $filename = $self->{Filename};
+	cast_error "File to append journal $filename";
+    }
 
-	return $result;
+    return $result;
 }
 
 sub CLEAR {
-	my $self = $_[0];
-	my $filename = $self->{Filename};
+    my $self = $_[0];
+    my $filename = $self->{Filename};
 
-	unlink $filename
-		|| cast_error "Failed to unlink journal $filename";
+    unlink $filename
+	|| cast_error "Failed to unlink journal $filename";
 
-	$self->{By_Name} = { };
+    $self->{By_Name} = { };
 }
 
 sub DESTROY { }
-
-
-package Conjury::Core::Stage;
-
-use Conjury::Core qw(%Option $Current_Context %Stage_By_Directory &cast_error);
-use Carp qw(croak);
-use Cwd qw(abs_path);
-use File::Spec;
-use File::Path qw(mkpath);
-
-=pod
-
-=head2 Conjury::Core::Stage
-
-A "stage" is an association between a directory and a journal object mapped to
-a file in that directory with a standard name.  On most platforms, journal
-files in a stage are named F<.conjury-journal>, but some filesystems have funny
-conventions so your experience may vary.
-
-Create a C<Conjury::Core::Stage> object with its C<new> method.  Create
-subdirectories within the stage using the C<make_subdir> method.
-
-=over 4
-
-=cut
-
-my %journal_name;
-
-sub _new_f()	{ __PACKAGE__ . '::new'	}
-
-BEGIN {
-	my $proto;
-
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Directory => \&Conjury::Core::Prototype::validate_scalar);
-	$proto->optional_arg
-	  (Journal => $validator{scalar_or_hash});
-	$prototype{_new_f()} = $proto;
-
-	$journal_name{VMS} = 'CONJURY.JNL';
-	$journal_name{os2} = 'conjury.jnl';
-	$journal_name{MacOS} = 'conjury journal';
-	$journal_name{MSWin32} = 'CONJURY.JNL';
-
-	use vars qw($AUTOLOAD);
-}
-
-=pod
-
-=item Conjury::Core::Stage->new
-
-Creates a stage object associated with a directory.  The arguments are named in
-a hash.  All of them are optional.
-
-Use the optional 'Directory' argument to associate the stage with a directory
-other than the one associated with the current context.
-
-Use the optional 'Journal' argument to associate the stage explicitly with a
-specific journal object.
-
-=cut
-
-sub new {
-	my ($class, %arg) = @_;
-	my $error = $prototype{_new_f()}->validate(\%arg);
-	croak _new_f, "-- $error" if $error;
-
-	my $directory = $arg{Directory};
-	my $curdir = $Current_Context->Directory;
-	$directory = $curdir unless defined($directory);
-	$directory = abs_path($directory);
-	croak _new_f, "-- stage at '$directory' already defined."
-		if exists($Stage_By_Directory{$directory});
-
-	mkpath $directory, 1, (0777 ^ umask);
-
-	my $journal = $arg{Journal};
-	if (!defined($journal)) {
-		$journal = $journal_name{$^O};
-		$journal = '.conjury-journal' unless defined($journal);
-	}
-	if (!ref($journal)) {
-		$journal = File::Spec->catfile($directory, $journal);
-		$journal = File::Spec->canonpath($journal);
-
-		$journal = eval {
-			my %journal;
-			tie %journal, 'Conjury::Core::Journal', $journal;
-			\%journal;
-		};
-		
-		die $@ if $@;
-	}
-
-	my $self = { };
-	bless $self, $class;
-
-	$self->{Directory} = $directory;
-	$self->{Journal} = $journal;
-
-	print "Stage: $directory\n" if exists($Option{'verbose'});
-	$Stage_By_Directory{$directory} = $self;
-	return $self;
-}
-
-sub AUTOLOAD {
-	my $field = $AUTOLOAD;
-	$field =~ s/.*:://;
-	my ($self, $set) = @_;
-
-	croak __PACKAGE__, "::$field-- argument mismatch"
-		unless ((@_ == 1 || @_ == 2) && ref($self));
-	croak __PACKAGE__, "::$field-- no field exists"
-		unless exists($self->{$field});
-	
-	$self->{$field} = $set if defined($set);
-	return $self->{$field};
-}
-
-sub DESTROY { }
-
-=pod
-
-=item $stage->make_subdir(F<directory>)
-
-Creates a subdirectory within the stage.  The named subdirectory must be
-specified by relative path.  It will be created during the compile phase, and
-its creation is not reversed by the B<--undo> option.
-
-=cut
-
-sub make_subdir {
-	my ($self, $directory) = @_;
-	croak __PACKAGE__, '::make_subdir-- argument mismatch'
-		unless (ref($self) && !ref($directory)
-				&& !File::Spec->file_name_is_absolute($directory));
-
-	$directory = File::Spec->catdir($self->{Directory}, $directory);
-	$directory = File::Spec->canonpath($directory);
-	mkpath $directory, 1, (0777 ^ umask);
-}
-
-=pod
-
-=back
-
-=cut
 
 
 package Conjury::Core::Spell;
 
 use Conjury::Core qw(%Option $Current_Context %Spell_By_FileSpec fetch_spells
-					 cast_error);
+		     cast_error);
 use Digest::MD5 qw(md5_base64);
 use File::Spec;
 use Carp qw(croak);
@@ -717,25 +575,25 @@ signature of every spell that references it in its tree of factors.
 
 =cut
 
-sub _new_f()	{ __PACKAGE__ . '::new'	}
+sub _new_f()    { __PACKAGE__ . '::new' }
 
 BEGIN {
-	my $proto;
+    my $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Journal => $validator{scalar_or_hash});
-	$proto->optional_arg
-	  (Factors => \&Conjury::Core::Prototype::validate_array);
-	$proto->optional_arg
-	  (Product => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Action => $validator{scalar_array_or_code});
-	$proto->optional_arg
-	  (Profile => $validator{scalar_or_code});
-	$prototype{_new_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Journal => $validator{scalar_or_hash});
+    $proto->optional_arg
+      (Factors => \&Conjury::Core::Prototype::validate_array);
+    $proto->optional_arg
+      (Product => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Action => $validator{scalar_array_or_code});
+    $proto->optional_arg
+      (Profile => $validator{scalar_or_code});
+    $prototype{_new_f()} = $proto;
 
-	use vars qw($AUTOLOAD);
+    use vars qw($AUTOLOAD);
 }
 
 =pod
@@ -781,9 +639,10 @@ Specifies the action to take when the spell is invoked.  The first and second
 form result in the scalar (or the list of scalars) to be used with the
 C<system> builtin function.
 
-The third form is for specifying a closure.  If you use a closure, you will be
-required to specify a profile for the closure.  This is because you cannot
-convert a code block into a string very easily in Perl.
+The third form is for specifying a closure that takes a reference to the spell
+object as its only argument.  If you use a closure, you will be required to
+specify a profile for the closure.  This is because you cannot convert a code
+block into a string very easily in Perl.
 
 When a spell is invoked, its action is executed in the context in which it was
 created.  Actions return boolean true on failure.
@@ -798,8 +657,8 @@ provide a profile that uniquely describes the action to take, including the
 name of the action function and the values of any parameters used in the
 construction of the closure.
 
-The second form is the more complicated case, i.e. the profile is a closure
-itself.  Closure profiles require no arguments, and they are called during the
+The second form is the more complicated case, i.e. the profile is, itself, a
+closure.  Closure profiles require no arguments, and they are called during the
 invocation phase immediately before the factors are invoked.  The explanation
 for why you would want to use this form is tedious, esoteric and best not
 presented during dinner.  Hint: C language dependency scanning is one case.
@@ -809,269 +668,247 @@ presented during dinner.  Hint: C language dependency scanning is one case.
 =cut
 
 sub new {
-	croak _new_f, '-- no context'
-		unless defined($Current_Context);
+    croak _new_f, '-- no context'
+	unless defined($Current_Context);
 
-	my ($class, %arg) = @_;
-	my $error = $prototype{_new_f()}->validate(\%arg);
-	croak _new_f, "-- $error" if $error;
+    my ($class, %arg) = @_;
+    my $error = $prototype{_new_f()}->validate(\%arg);
+    croak _new_f, "-- $error" if $error;
 
-	my $journal = $arg{Journal};
-	my $factors_ref = $arg{Factors};
-	my @factors = defined($factors_ref) ? @$factors_ref : ();
+    my $journal = $arg{Journal};
+    my $factors_ref = $arg{Factors};
+    my @factors = defined($factors_ref) ? @$factors_ref : ();
 
-	my $product_ref = $arg{Product};
-	my (@product, @abs_product);
-	if (defined($product_ref)) {
-		$product_ref = [ $product_ref ] if !ref($product_ref);
+    my $product_ref = $arg{Product};
+    my (@product, @abs_product);
+    if (defined($product_ref)) {
+	$product_ref = [ $product_ref ] if !ref($product_ref);
 
-		my $context = $Current_Context;
-		my $directory = $context->Directory;
+	my $context = $Current_Context;
+	my $directory = $context->Directory;
 
-		@product = @$product_ref;
+	@product = @$product_ref;
 
-		for (@$product_ref) {
-			my $file = $_;
-			$file = File::Spec->catfile($directory, $file)
-				unless File::Spec->file_name_is_absolute($file);
-			$file = File::Spec->canonpath($file);
+	for (@$product_ref) {
+	    my $file = $_;
+	    $file = File::Spec->catfile($directory, $file)
+		unless File::Spec->file_name_is_absolute($file);
+	    $file = File::Spec->canonpath($file);
 
-			croak _new_f, "-- spell exists for $file"
-				if exists($Spell_By_FileSpec{$file});
+	    croak _new_f, "-- spell exists for $file"
+		if exists($Spell_By_FileSpec{$file});
 
-			push @abs_product, $file;
-		}
+	    push @abs_product, $file;
 	}
+    }
 
-	my $action = $arg{Action};
-	croak _new_f, '-- action required for product'
-		unless (!@product || defined($action));
+    my $action = $arg{Action};
+    croak _new_f, '-- action required for product'
+	unless (!@product || defined($action));
 
-	my $profile = $arg{Profile};
-	
-	if (defined($action)) {
-		if (@product > 0 && exists $Option{'undo'}) {
-			my $output = "unlinking " . join(' ', @product);
-			$profile = __PACKAGE__ . ' ' . $output;
+    my $profile = $arg{Profile};
+    
+    if (defined($action)) {
+        if (!ref($action)) {
+	    if ($action ne '') {
+		my $output = $action;
+		$profile = __PACKAGE__ . ' ' . $output
+		  unless (defined $profile);
 
-			$action = sub {
-				print "$output\n";
-				my $n = unlink @product if !exists($Option{'preview'});
-				return 0;
-			};
-		}
-		elsif (!ref($action)) {
-			if ($action ne '') {
-				my $output = $action;
-				$profile = __PACKAGE__ . ' ' . $output
-				  unless (defined $profile);
+		my $save_action = $action;
+		$action = sub {
+		    print "$output\n";
 
-				my $save_action = $action;
-				$action = sub {
-					print "$output\n";
-
-					my $result;
-					$result = system $save_action
-						if !exists($Option{'preview'});
-					return $result;
-				};
-			}
-			else {
-				croak _new_f, '-- empty action scalar';
-			}
-		}
-		elsif (ref($action) eq 'ARRAY') {
-			if (@$action) {
-				my $output = join ' ', (map { /\s/ ? "'$_'" : $_ } @$action);
-				$profile = __PACKAGE__ . ' ' . $output
-					unless defined($profile);
-
-				my $save_action = $action;
-				$action = sub {
-					print "$output\n";
-
-					my $result;
-					$result = system @$save_action
-						if !exists($Option{'preview'});
-					return $result;
-				};
-			}
-			else {
-				croak _new_f, '-- empty action array';
-			}
-		}
-		else {
-			croak _new_f, '-- action requires a profile'
-				unless defined($profile);
-		}
+		    my $result;
+		    $result = system $save_action
+			if !exists($Option{'preview'});
+		    return $result;
+		};
+	    }
+	    else {
+		croak _new_f, '-- empty action scalar';
+	    }
 	}
+	elsif (ref($action) eq 'ARRAY') {
+	    if (@$action) {
+		my $output = join ' ', (map { /\s/ ? "'$_'" : $_ } @$action);
+		$profile = __PACKAGE__ . ' ' . $output
+		    unless defined($profile);
 
-	$profile = __PACKAGE__ . " $$ $^T" unless defined($profile);
+		my $save_action = $action;
+		$action = sub {
+		    print "$output\n";
 
-	my $self = { };
-	bless $self, $class;
-
-	$self->{Journal} = $journal;
-	$self->{Factors} = \@factors;
-	$self->{Product} = \@product;
-	$self->{Abs_Product} = \@abs_product;
-	$self->{Profile} = $profile;
-	$self->{Context} = $Current_Context;
-	$self->{Action} = $action;
-	$self->{Signature} = undef;
-
-	for (@abs_product) {
-		$Spell_By_FileSpec{$_} = $self;
+		    my $result;
+		    $result = system @$save_action
+			if !exists($Option{'preview'});
+		    return $result;
+		};
+	    }
+	    else {
+		croak _new_f, '-- empty action array';
+	    }
 	}
+	else {
+	    croak _new_f, '-- action requires a profile'
+		unless defined($profile);
+	}
+    }
 
-	return $self;
+    $profile = __PACKAGE__ . " $$ $^T" unless defined($profile);
+
+    my $self = { };
+    bless $self, $class;
+
+    $self->{Journal} = $journal;
+    $self->{Factors} = \@factors;
+    $self->{Product} = \@product;
+    $self->{Abs_Product} = \@abs_product;
+    $self->{Profile} = $profile;
+    $self->{Context} = $Current_Context;
+    $self->{Action} = $action;
+    $self->{Signature} = undef;
+
+    for (@abs_product) {
+	$Spell_By_FileSpec{$_} = $self;
+    }
+
+    return $self;
 }
 
 sub AUTOLOAD {
-	my $field = $AUTOLOAD;
-	$field =~ s/.*:://;
-	my ($self, $set) = @_;
+    my $field = $AUTOLOAD;
+    $field =~ s/.*:://;
+    my ($self, $set) = @_;
 
-	croak __PACKAGE__, "::$field-- argument mismatch"
-		unless ((@_ == 1 || @_ == 2) && ref($self));
-	croak __PACKAGE__, "::$field-- no field exists"
-		unless exists($self->{$field});
-	
-	$self->{$field} = $set if defined($set);
-	return $self->{$field};
+    croak __PACKAGE__, "::$field-- argument mismatch"
+	unless ((@_ == 1 || @_ == 2) && ref($self));
+    croak __PACKAGE__, "::$field-- no field exists"
+	unless exists($self->{$field});
+    
+    $self->{$field} = $set if defined($set);
+    return $self->{$field};
 }
 
 sub DESTROY {
-	my $self = $_[0];
+    my $self = $_[0];
 
-	my $abs_product = $self->{Abs_Product};
-	return unless defined($abs_product);
+    my $abs_product = $self->{Abs_Product};
+    return unless defined($abs_product);
 
-	for (@$abs_product) {
-		delete $Spell_By_FileSpec{$_};
-	}
+    for (@$abs_product) {
+	delete $Spell_By_FileSpec{$_};
+    }
 }
 
 sub invoke {
-	my $self = $_[0];
-	croak __PACKAGE__, '::invoke-- argument mismatch'
-		unless (@_ == 1 && ref($self));
+    my $self = $_[0];
+    croak __PACKAGE__, '::invoke-- argument mismatch'
+	unless (@_ == 1 && ref($self));
 
-	return $self->{Signature} if defined($self->{Signature});
+    return $self->{Signature} if defined($self->{Signature});
 
-	my $profile = $self->{Profile};
-	my $context = $self->{Context};
-	my $signature = '';
-	my $verbose = exists $Option{'verbose'};
+    my $profile = $self->{Profile};
+    my $context = $self->{Context};
+    my $signature = '';
+    my $verbose = exists $Option{'verbose'};
 
-	my $directory = $context->Directory;
-	my @save = $context->push;
+    my $directory = $context->Directory;
+    my @save = $context->push;
 
-	print ">> $directory\n" if (!$verbose && defined($save[0]));
+    print ">> $directory\n" if (!$verbose && defined($save[0]));
 
-	eval {
-		$profile = &$profile() if (ref($profile) eq 'CODE');
-		cast_error "Profile returned non-scalar"
-		  unless (defined($profile) && !ref($profile));
+    eval {
+	$profile = &$profile() if (ref($profile) eq 'CODE');
+	cast_error "Profile returned non-scalar"
+	  unless (defined($profile) && !ref($profile));
 
-		my $factors = $self->{Factors};
-		my $force = exists $Option{'force'};
-		my $preview = exists $Option{'preview'};
-		my $undo = undef;
-		$undo = $Option{'undo'} if (exists $Option{'undo'});
+	my $factors = $self->{Factors};
+	my $force = exists $Option{'force'};
+	my $preview = exists $Option{'preview'};
 
-		if (@$factors and (!defined $undo or $undo ne 'only')) {
-			my @spells;
+	if (@$factors) {
+	    my @spells;
 
-			for my $factor (@$factors) {
-				my @f_spells;
+	    for my $factor (@$factors) {
+		my @f_spells;
 
-				if (ref $factor) {
-					 @f_spells = ( $factor );
-				}
-				else {
-					@f_spells = fetch_spells Name => $factor;
-					if (@f_spells) {
-						push @spells, @f_spells;
-					}
-					else {
-						my @file_stat = stat $factor;
-						if (@file_stat) {
-							$profile .= " $factor $file_stat[9]";
-						}
-						else {
-							cast_error
-							  "No spells for '$factor'",
-							  "...is it a missing source file?";
-						}
-					}
-				}
-
-				for my $spell (@f_spells) {
-					push @spells, $spell
-					  if (!defined $undo or $undo ne 'local'
-						  or $context == $spell->{Context});
-				}
+		if (ref $factor) {
+		     @f_spells = ( $factor );
+		}
+		else {
+		    @f_spells = fetch_spells Name => $factor;
+		    if (@f_spells) {
+			push @spells, @f_spells;
+		    }
+		    else {
+			my @file_stat = stat $factor;
+			if (@file_stat) {
+			    $profile .= " $factor $file_stat[9]";
 			}
-
-			$profile .= ' ';
-			for my $spell (@spells) {
-				unless ($spell == $self) {
-					$profile .= $spell->invoke();
-					$force = 1 unless (defined($spell->{Action}));
-				}
+			else {
+			    cast_error
+			      "No spells for '$factor'",
+			      "...is it a missing source file?";
 			}
+		    }
 		}
 
-		$signature = $profile;
-		$signature = md5_base64($signature) if $signature ne '';
-
-		my $product = $self->{Abs_Product};
-		my $journal = $self->{Journal};
-		my $action = $self->{Action};
-	
-		if (defined($journal)) {
-			for my $file (@$product) {
-				if (!$undo) {
-					if (exists($journal->{$file})
-						&& $journal->{$file} eq $signature
-						&& -f $file)
-					{
-						$action = undef unless ($force);
-					}
-				}
-				else {
-					$action = undef unless ($force || -f $file);
-
-					if (exists $journal->{$file} && !$preview) {
-						delete $journal->{$file};
-					}
-				}
-			}
+		for my $spell (@f_spells) {
+		    push @spells, $spell
+		      if ($context == $spell->{Context});
 		}
+	    }
 
-		if (defined($action)) {
-			my $result = &$action();
-			cast_error "Action failed (result='$result')" if $result;
-
-			unless ($undo || $preview) {
-				for (@$product) {
-					$journal->{$_} = $signature;
-				}
-			}
-
-			$self->{Action} = undef;
+	    $profile .= ' ';
+	    for my $spell (@spells) {
+		unless ($spell == $self) {
+		    $profile .= $spell->invoke();
+		    $force = 1 unless (defined($spell->{Action}));
 		}
-	};
+	    }
+	}
 
-	my $exception = $@;
-	$context = Conjury::Core::Context->pop(@save);
-	die $exception if $exception;
+	$signature = $profile;
+	$signature = md5_base64($signature) if $signature ne '';
 
-	print "<< $directory\n" if (!$verbose && defined($save[0]));
+	my $product = $self->{Abs_Product};
+	my $journal = $self->{Journal};
+	my $action = $self->{Action};
+    
+	if (defined($journal)) {
+	    for my $file (@$product) {
+                if (exists $journal->{$file}
+                    && $journal->{$file} eq $signature
+                    && -f $file)
+                {
+                    $action = undef unless ($force);
+                }
+	    }
+	}
 
-	$self->{Signature} = $signature;
-	return $signature;
+	if (defined($action)) {
+	    my $result = &$action($self);
+	    cast_error "Action failed (result='$result')" if $result;
+
+	    unless ($preview) {
+		for (@$product) {
+		    $journal->{$_} = $signature;
+		}
+	    }
+
+	    $self->{Action} = undef;
+	}
+    };
+
+    my $exception = $@;
+    $context = Conjury::Core::Context->pop(@save);
+    die $exception if $exception;
+
+    print "<< $directory\n" if (!$verbose && defined($save[0]));
+
+    $self->{Signature} = $signature;
+    return $signature;
 }
 
 
@@ -1080,130 +917,131 @@ package Conjury::Core;
 use Carp qw(croak);
 use Getopt::Long qw(GetOptions);
 use File::Basename qw(basename dirname);
+use File::Path;
 use Cwd qw(abs_path);
 
 =pod
 
 =head2 Exported Functions
 
-The C<name_spell>, C<fetch_spells> and C<find_stage> functions should probably
-be moved into an appropriate Conjury::Core::Xxxxx namespace.  If they stay
-where they are, then the contents of C<@EXPORT> should be moved to
-C<@EXPORT_OK>. It remains unclear what is the right thing to do here-- but it
-will be.  It will.
+The C<name_spell> and C<fetch_spells> functions should probably be moved into
+an appropriate Conjury::Core::Xxxxx namespace.  If they stay where they are,
+then the contents of C<@EXPORT> should be moved to C<@EXPORT_OK>. It remains
+unclear what is the right thing to do here-- but it will be.  It will.
 
 =over 4
 
 =cut
 
-sub _cast_f()	   		{ __FILE__ . '/cast'				}
-sub _cast_warning_f()	{ __PACKAGE__ . '::cast_warning'	}
-sub _cast_error_f()		{ __PACKAGE__ . '::cast_error'		}
-sub _execute_f()		{ __PACKAGE__ . '::execute'			}
-sub _name_spell_f()		{ __PACKAGE__ . '::name_spell'		}
-sub _fetch_spells_f()	{ __PACKAGE__ . '::fetch_spells'	}
-sub _find_stage_f()		{ __PACKAGE__ . '::find_state'		}
-sub _deferral_f()		{ __PACKAGE__ . '::deferral'		}
-sub _filecopy_f()		{ __PACKAGE__ . '::filecopy'		}
-sub _dispell_f()		{ __PACKAGE__ . '::dispell'			}
+sub _cast_f()	        { __FILE__ . '/cast'		    }
+sub _cast_warning_f()   { __PACKAGE__ . '::cast_warning'    }
+sub _cast_error_f()     { __PACKAGE__ . '::cast_error'      }
+sub _execute_f()	{ __PACKAGE__ . '::execute'	    }
+sub _name_spell_f()     { __PACKAGE__ . '::name_spell'      }
+sub _fetch_spells_f()   { __PACKAGE__ . '::fetch_spells'    }
+sub _deferral_f()       { __PACKAGE__ . '::deferral'	    }
+sub _filecopy_f()       { __PACKAGE__ . '::filecopy'	    }
+sub _dispell_f()	{ __PACKAGE__ . '::dispell'	    }
 
 BEGIN {
-	my $proto;
+    my $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Context => $validator{context_object});
-	$proto->optional_arg
-	  (Name => $validator{scalar_or_array_of_scalar});
-	$prototype{_cast_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Context => $validator{context_object});
+    $proto->optional_arg
+      (Name => $validator{scalar_or_array_of_scalar});
+    $prototype{_cast_f()} = $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Spell => $validator{spell_object});
-	$proto->optional_arg
-	  (Context => $validator{context_object});
-	$proto->optional_arg
-	  (Name => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Default => \&Conjury::Core::Prototype::validate_scalar);
-	$prototype{_name_spell_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Spell => $validator{spell_object});
+    $proto->optional_arg
+      (Context => $validator{context_object});
+    $proto->optional_arg
+      (Name => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Default => \&Conjury::Core::Prototype::validate_scalar);
+    $prototype{_name_spell_f()} = $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Context => $validator{context_object});
-	$proto->optional_arg
-	  (Name => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Require => \&Conjury::Core::Prototype::validate_scalar);
-	$prototype{_fetch_spells_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Context => $validator{context_object});
+    $proto->optional_arg
+      (Name => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Require => \&Conjury::Core::Prototype::validate_scalar);
+    $prototype{_fetch_spells_f()} = $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Directory => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Name => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (If_Present => \&Conjury::Core::Prototype::validate_scalar);
-	$prototype{_deferral_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Directory => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Name => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (If_Present => \&Conjury::Core::Prototype::validate_scalar);
+    $prototype{_deferral_f()} = $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Journal => \&Conjury::Core::Prototype::validate_hash);
-	$proto->optional_arg
-	  (File => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Factors => \&Conjury::Core::Prototype::validate_array);
-	$proto->optional_arg
-	  (Directory => \&Conjury::Core::Prototype::validate_scalar);
-	$proto->optional_arg
-	  (Permission => \&Conjury::Core::Prototype::validate_scalar);
-	$proto->optional_arg
-	  (Owner => $validator{array_of_2_scalars});
-	$prototype{_filecopy_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Journal => \&Conjury::Core::Prototype::validate_hash);
+    $proto->optional_arg
+      (File => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Factors => \&Conjury::Core::Prototype::validate_array);
+    $proto->optional_arg
+      (Directory => \&Conjury::Core::Prototype::validate_scalar);
+    $proto->optional_arg
+      (Permission => \&Conjury::Core::Prototype::validate_scalar);
+    $proto->optional_arg
+      (Owner => $validator{array_of_2_scalars});
+    $prototype{_filecopy_f()} = $proto;
 
-	$proto = Conjury::Core::Prototype->new;
-	$proto->optional_arg
-	  (Journal => \&Conjury::Core::Prototype::validate_hash);
-	$proto->optional_arg
-	  (Factors => \&Conjury::Core::Prototype::validate_array);
-	$proto->optional_arg
-	  (File => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Directory => $validator{scalar_or_array_of_scalar});
-	$proto->optional_arg
-	  (Require => \&Conjury::Core::Prototype::validate_scalar);
-	$prototype{_dispell_f()} = $proto;
+    $proto = Conjury::Core::Prototype->new;
+    $proto->optional_arg
+      (Journal => \&Conjury::Core::Prototype::validate_hash);
+    $proto->optional_arg
+      (Factors => \&Conjury::Core::Prototype::validate_array);
+    $proto->optional_arg
+      (File => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Glob => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Directory => $validator{scalar_or_array_of_scalar});
+    $proto->optional_arg
+      (Require => \&Conjury::Core::Prototype::validate_scalar);
+    $prototype{_dispell_f()} = $proto;
 }
 
 my $cast = sub {
-	my %arg = @_;
-	my $error = $prototype{_cast_f()}->validate(\%arg);
-	croak _cast_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_cast_f()}->validate(\%arg);
+    croak _cast_f, "-- $error" if $error;
 
-	my $context = (defined $arg{Context}) ? $arg{Context} : $Current_Context;
+    my $context = (defined $arg{Context}) ? $arg{Context} : $Current_Context;
 
-	my $name_arg;
-	$name_arg = $arg{Name} if (defined($arg{Name}));
-	$name_arg = [ $name_arg ] if (defined($name_arg) && !ref($name_arg));
+    my $name_arg;
+    $name_arg = $arg{Name} if (defined($arg{Name}));
+    $name_arg = [ $name_arg ] if (defined($name_arg) && !ref($name_arg));
 
-	my @spells;
-	if (@$name_arg > 0) {
-		for (@$name_arg) {
-			push @spells, (fetch_spells
-						   Context => $context,
-						   Name => $_,
-						   Require => 1);
-		}
+    my @spells;
+    if (@$name_arg > 0) {
+	for (@$name_arg) {
+	    push @spells, (fetch_spells
+			   Context => $context,
+			   Name => $_,
+			   Require => 1);
 	}
-	else {
-		@spells = fetch_spells Context => $context, Require => 1;
-	}
+    }
+    else {
+	@spells = fetch_spells Context => $context, Require => 1;
+    }
 
-	for my $spell (@spells) {
-		$spell->invoke();
-	}
+    for my $spell (@spells) {
+	$spell->invoke();
+    }
 
-	undef;
+    undef;
 };
 
 =pod
@@ -1217,16 +1055,16 @@ warning from the B<cast> utility, and a newline is appended.
 =cut
 
 sub cast_warning {
-	my $message = join '', @_;
-	croak _cast_warning_f, '-- argument mismatch' unless (!ref($message));
+    my $message = join '', @_;
+    croak _cast_warning_f, '-- argument mismatch' unless (!ref($message));
 
-	if (defined($Current_Context)) {
-		my $directory = $Current_Context->{Directory};
-		warn "$0: Warning in context $directory ...\n$0: $message\n";
-	}
-	else {
-		warn "$0: $message\n";
-	}
+    if (defined($Current_Context)) {
+	my $directory = $Current_Context->{Directory};
+	warn "$0: Warning in context $directory ...\n$0: $message\n";
+    }
+    else {
+	warn "$0: $message\n";
+    }
 }
 
 =pod
@@ -1240,80 +1078,67 @@ message as an error from the B<cast> utility, and a newline is appended.
 =cut
 
 sub cast_error {
-	my $message = join '', @_; croak _cast_error_f, '-- argument mismatch'
-		unless (!ref($message));
+    my $message = join '', @_; croak _cast_error_f, '-- argument mismatch'
+	unless (!ref($message));
 
-	if (defined($Current_Context)) {
-		my $directory = $Current_Context->{Directory};
-		die "$0: Error in context $directory ...\n$0: $message\n";
-	}
-	else {
-		die "$0: $message\n";
-	}
+    if (defined($Current_Context)) {
+	my $directory = $Current_Context->{Directory};
+	die "$0: Error in context $directory ...\n$0: $message\n";
+    }
+    else {
+	die "$0: $message\n";
+    }
 }
 
 sub execute {
-	croak _execute_f, '-- already executing'
-		if defined($Current_Context);
+    croak _execute_f, '-- already executing'
+	if defined($Current_Context);
 
-	my ($topdir, $curdir) = @_;
-	croak _execute_f, '-- argument mismatch'
-		unless (@_ == 2 && !ref($topdir) && !ref($curdir));
+    my ($topdir, $curdir) = @_;
+    croak _execute_f, '-- argument mismatch'
+	unless (@_ == 2 && !ref($topdir) && !ref($curdir));
 
-	GetOptions \%Option, qw(verbose force preview undo:s define=s%);
+    GetOptions \%Option, qw(verbose force preview define=s%);
 
-	if (exists $Option{'undo'}) {
-		my $undo = $Option{'undo'};
-		if (!$undo) {
-			$undo = 'local';
-			$Option{'undo'} = $undo;
-		}
+    if (exists $Option{'verbose'}) {
+	print "Top:\t\t$topdir\n";
+	print "Current:\t$curdir\n";
 
-		cast_error("Value of 'undo' option must be either 'all', ",
-				   "'only', 'local' or unspecified.")
-		  unless ($undo =~ /\A(all|local|only)\Z/);
+	my $str = 'verbose';
+	$str .= ' force' if exists($Option{'force'});
+	$str .= ' preview' if exists($Option{'preview'});
+	print "Options:\t$str\n";
+
+	if (exists $Option{'define'}) {
+	    my $define = $Option{'define'};
+	    print "Variables:\t";
+
+	    my $space = '';
+	    scalar(keys %$define);
+
+	    my ($name, $value);
+	    while (($name, $value) = each %$define) {
+		print "$space'$name'='$value'";
+		$space = ' ';
+	    }
+
+	    print "\n";
 	}
 
-	if (exists $Option{'verbose'}) {
-		print "Top:\t\t$topdir\n";
-		print "Current:\t$curdir\n";
-
-		my $str = 'verbose';
-		$str .= ' force' if exists($Option{'force'});
-		$str .= ' preview' if exists($Option{'preview'});
-		$str .= " undo='$Option{undo}'" if (exists($Option{'undo'}));
-		print "Options:\t$str\n";
-
-		if (exists $Option{'define'}) {
-			my $define = $Option{'define'};
-			print "Variables:\t";
-
-			my $space = '';
-			scalar(keys %$define);
-
-			my ($name, $value);
-			while (($name, $value) = each %$define) {
-				print "$space'$name'='$value'";
-				$space = ' ';
-			}
-
-			print "\n";
-		}
-
-		if (@ARGV) {
-			print "Targets:\t", join(' ', (map "'$_'", @ARGV)), "\n";
-		}
-
-		print "\nCompiling...\n";
+	if (@ARGV) {
+	    print "Targets:\t", join(' ', (map "'$_'", @ARGV)), "\n";
 	}
+
+	print "\nCompiling...\n";
+    }
 
     Conjury::Core::Context->new(Directory => $topdir);
-	my $context = $Context_By_Directory{$curdir};
-	cast_error "Directory $curdir not referenced." unless defined($context);
+    my $context = $Context_By_Directory{$curdir};
+    cast_error "Directory $curdir not referenced." unless defined($context);
 
-	print "\nCasting...\n" if exists($Option{'verbose'});
-	&$cast(Context => $context, Name => \@ARGV);
-	return 0;
+    print "\nCasting...\n" if exists($Option{'verbose'});
+    &$cast(Context => $context, Name => \@ARGV);
+    return 0;
 }
 
 =pod
@@ -1340,34 +1165,34 @@ utility from the command line.
 =cut
 
 sub name_spell {
-	my %arg = @_;
-	my $error = $prototype{_name_spell_f()}->validate(\%arg);
-	croak _name_spell_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_name_spell_f()}->validate(\%arg);
+    croak _name_spell_f, "-- $error" if $error;
 
-	my $spell = $arg{Spell};
-	my $context = (defined $arg{Context}) ? $arg{Context} : $Current_Context;
-	my $name_list;
-	$name_list = $arg{Name} if (exists $arg{Name});
-	$name_list = [ $name_list ] if (defined $name_list and !ref $name_list);
+    my $spell = $arg{Spell};
+    my $context = (defined $arg{Context}) ? $arg{Context} : $Current_Context;
+    my $name_list;
+    $name_list = $arg{Name} if (exists $arg{Name});
+    $name_list = [ $name_list ] if (defined $name_list and !ref $name_list);
 
-	my $spelllist = undef;
+    my $spelllist = undef;
 
-	if (defined $name_list) {
-		my $spellhash = $context->Spells_By_Name;
+    if (defined $name_list) {
+	my $spellhash = $context->Spells_By_Name;
 
-		for my $name (@$name_list) {
-			$spellhash->{$name} = [ ] unless (exists $spellhash->{$name});
-			$spelllist = $spellhash->{$name};
-			push @$spelllist, $spell;
-		}
+	for my $name (@$name_list) {
+	    $spellhash->{$name} = [ ] unless (exists $spellhash->{$name});
+	    $spelllist = $spellhash->{$name};
+	    push @$spelllist, $spell;
 	}
+    }
 
-	if (!defined $spelllist or defined $arg{Default}) {
-		$spelllist = $context->Default_Spells;
-		push @$spelllist, $spell;
-	}
+    if (!defined $spelllist or defined $arg{Default}) {
+	$spelllist = $context->Default_Spells;
+	push @$spelllist, $spell;
+    }
 
-	return $spell;
+    return $spell;
 }
 
 =pod
@@ -1398,111 +1223,65 @@ result.
 =cut
 
 sub fetch_spells {
-	my %arg = @_;
-	my $error = $prototype{_fetch_spells_f()}->validate(\%arg);
-	croak _fetch_spells_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_fetch_spells_f()}->validate(\%arg);
+    croak _fetch_spells_f, "-- $error" if $error;
 
-	my $context = (exists $arg{Context}) ? $arg{Context} : $Current_Context;
-	my $name_arg = $arg{Name};
-	my $require = defined $arg{Require};
+    my $context = (exists $arg{Context}) ? $arg{Context} : $Current_Context;
+    my $name_arg = $arg{Name};
+    my $require = defined $arg{Require};
 
-	my (@names, $spellhash, $directory);
+    my (@names, $spellhash, $directory);
 
-	$directory = $context->Directory;
+    $directory = $context->Directory;
 
-	if (defined($name_arg)) {
-		$spellhash = $context->Spells_By_Name;
-		@names = ref($name_arg) ? @$name_arg : ($name_arg);
-	}
+    if (defined($name_arg)) {
+	$spellhash = $context->Spells_By_Name;
+	@names = ref($name_arg) ? @$name_arg : ($name_arg);
+    }
 
-	my @spells = ( );
-	if (@names > 0) {
-		for my $name (@names) {
-			my @these;
+    my @spells = ( );
+    if (@names > 0) {
+	for my $name (@names) {
+	    my @these;
 
-			my $filename = $name;
-		    $filename = File::Spec->catfile($directory, $filename)
-				unless File::Spec->file_name_is_absolute($filename);
-			$filename = File::Spec->canonpath($filename);
+	    my $filename = $name;
+	    $filename = File::Spec->catfile($directory, $filename)
+		unless File::Spec->file_name_is_absolute($filename);
+	    $filename = File::Spec->canonpath($filename);
 
-			if (exists($Spell_By_FileSpec{$filename})) {
-				push @these, $Spell_By_FileSpec{$filename}
-			}
+	    if (exists($Spell_By_FileSpec{$filename})) {
+		push @these, $Spell_By_FileSpec{$filename}
+	    }
 
-			if (exists $spellhash->{$name}) {
-				my $these = $spellhash->{$name};
-				push @these, @$these;
-			}
+	    if (exists $spellhash->{$name}) {
+		my $these = $spellhash->{$name};
+		push @these, @$these;
+	    }
 
-			if ($require && !@these) {
-				die <<ends;
+	    if ($require && !@these) {
+		die <<ends;
 $0: Error in context $directory ...
 $0: No spells for '$name'.
 ends
-			}
+	    }
 
-			push @spells, @these;
-		}
+	    push @spells, @these;
 	}
-	else {
-		my $these = $context->Default_Spells;
-		if ($require && !@$these) {
-				die <<ends;
+    }
+    else {
+	my $these = $context->Default_Spells;
+	if ($require && !@$these) {
+		die <<ends;
 $0: Error in context $directory ...
 $0: No default spells.
 ends
-        }
-
-		@spells = @$these;
 	}
 
-	return wantarray ? @spells : \@spells;
-}
+	@spells = @$these;
+    }
 
-=pod
-
-=item find_stage F<directory>
-
-Finds the stage object for the specified directory.
-
-In array context, this returns a 2-tuple of the base directory for the stage
-object and the relative path from the base to specified directory.
-
-=cut
-
-sub find_stage {
-	my $directory = $_[0];
-	$directory = $Current_Context->Directory
-		unless (defined($directory) || !defined($Current_Context));
-	croak _find_stage_f, '-- argument mismatch'
-	  unless (@_ <= 1 && !ref($directory));
-
-	$directory = abs_path($directory);
-	$directory = File::Spec->canonpath($directory);
-
-	my $stage_dir = $directory;
-	my ($stage, $subdir);
-	while (1) {
-		$stage = $Stage_By_Directory{$stage_dir};
-		last if (defined($stage) || $stage_dir eq File::Spec->rootdir);
-		
-		my $name;
-		($stage_dir, $name) = (dirname($stage_dir), basename($stage_dir));
-		$subdir = defined($subdir)
-			? File::Spec->catdir($name, $subdir) : $name;
-	}
-
-	$stage = Conjury::Core::Stage->new(Directory => $directory)
-		unless defined($stage);
-
-	if (wantarray) {
-		my @result = ($stage);
-		push @result, $subdir if defined($subdir);
-		return @result;
-	}
-	else {
-		return $stage;
-	}
+    return wantarray ? @spells : \@spells;
 }
 
 =pod
@@ -1526,64 +1305,64 @@ for each directory at a time.
 =cut
 
 sub deferral {
-	my %arg = @_;
-	my $error = $prototype{_deferral_f()}->validate(\%arg);
-	croak _deferral_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_deferral_f()}->validate(\%arg);
+    croak _deferral_f, "-- $error" if $error;
 
-	my $directory = $arg{Directory};
-	$directory = [ $directory ] unless (ref $directory eq 'ARRAY');
+    my $directory = $arg{Directory};
+    $directory = [ $directory ] unless (ref $directory eq 'ARRAY');
 
-	my $name_arg = $arg{Name};
-	my @name;
-	if (defined($name_arg)) {
-		@name = ref($name_arg) ? @$name_arg : ( $name_arg );
+    my $name_arg = $arg{Name};
+    my @name;
+    if (defined($name_arg)) {
+	@name = ref($name_arg) ? @$name_arg : ( $name_arg );
+    }
+
+    my $if_present = defined $arg{If_Present};
+
+    my @spells;
+    my $verbose = exists $Option{'verbose'};
+
+    if ($verbose) {
+	print _deferral_f, "--\n";
+
+	print "  Directory => [",  (join ',', (map "'$_'", @$directory)), ']';
+	print " if present" if $if_present;
+	print "\n";
+
+	print "  Name => [", (join ',', (map "'$_'", @name)), "]\n";
+    }
+
+    my @fetch_args = (Name => \@name);
+    push @fetch_args, (Require => 1) unless $if_present;
+
+    for my $d (@$directory) {
+	unless (-d $d) {
+	    my $output = "Directory $d not present";
+	    cast_error $output unless $if_present;
+	    cast_warning $output if $verbose;
+	    next;
 	}
 
-	my $if_present = defined $arg{If_Present};
+	$d = abs_path($d);
+	my $c = $Context_By_Directory{$d};
+	$c = Conjury::Core::Context->new(Directory => $d) if (!defined($c));
 
-	my @spells;
-	my $verbose = exists $Option{'verbose'};
+	if (defined($c)) {
+	    my @deferred_spells = eval {
+		fetch_spells Context => $c, @fetch_args;
+	    };
 
-	if ($verbose) {
-		print _deferral_f, "--\n";
+	    if ($@) {
+		cast_warning "Problem deferring spells to $d ... ";
+		die $@;
+	    }
 
-		print "  Directory => [",  (join ',', (map "'$_'", @$directory)), ']';
-		print " if present" if $if_present;
-		print "\n";
-
-		print "  Name => [", (join ',', (map "'$_'", @name)), "]\n";
+	    push @spells, @deferred_spells;
 	}
+    }
 
-	my @fetch_args = (Name => \@name);
-	push @fetch_args, (Require => 1) unless $if_present;
-
-	for my $d (@$directory) {
-		unless (-d $d) {
-			my $output = "Directory $d not present";
-			cast_error $output unless $if_present;
-			cast_warning $output if $verbose;
-			next;
-		}
-
-		$d = abs_path($d);
-		my $c = $Context_By_Directory{$d};
-		$c = Conjury::Core::Context->new(Directory => $d) if (!defined($c));
-
-		if (defined($c)) {
-			my @deferred_spells = eval {
-				fetch_spells Context => $c, @fetch_args;
-			};
-
-			if ($@) {
-				cast_warning "Problem deferring spells to $d ...";
-				die $@;
-			}
-
-			push @spells, @deferred_spells;
-		}
-	}
-
-	return Conjury::Core::Spell->new(Factors => \@spells);
+    return Conjury::Core::Spell->new(Factors => \@spells);
 }
 
 =pod
@@ -1623,105 +1402,105 @@ the destination.  The syntax requirements for C<chown> apply.
 =cut
 
 sub filecopy {
-	my %arg = @_;
-	my $error = $prototype{_filecopy_f()}->validate(\%arg);
-	croak _filecopy_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_filecopy_f()}->validate(\%arg);
+    croak _filecopy_f, "-- $error" if $error;
 
-	my $journal = $arg{Journal};
-	my $directory = $arg{Directory};
-	my $file_arg = $arg{File};
-	my $permission = $arg{Permission};
-	my $owner = $arg{Owner};
-	my $factors_ref = $arg{Factors};
+    my $journal = $arg{Journal};
+    my $directory = $arg{Directory};
+    my $file_arg = $arg{File};
+    my $permission = $arg{Permission};
+    my $owner = $arg{Owner};
+    my $factors_ref = $arg{Factors};
 
-	my $files = (!ref $file_arg) ? [ $file_arg ] : $file_arg;
+    my $files = (!ref $file_arg) ? [ $file_arg ] : $file_arg;
 
-	$permission = oct $permission
-	  if (defined($permission) && $permission =~ /\A0\d+\Z/);
+    $permission = oct $permission
+      if (defined($permission) && $permission =~ /\A0\d+\Z/);
 
-	my @factors = (defined $factors_ref) ? @$factors_ref : ();
+    my @factors = (defined $factors_ref) ? @$factors_ref : ();
 
-	my $verbose = exists $Option{'verbose'};
-	my $preview = exists $Option{'preview'};
+    my $verbose = exists $Option{'verbose'};
+    my $preview = exists $Option{'preview'};
 
-	my @product = map File::Spec->catfile($directory, basename($_)), @$files;
-	my $file_str = join(' ', @$files);
-	my $product_str = join(' ', @product);
+    my @product = map File::Spec->catfile($directory, basename($_)), @$files;
+    my $file_str = join(' ', @$files);
+    my $product_str = join(' ', @product);
 
-	my $profile = _filecopy_f;
-	$profile .= " $directory $file_str";
-	$profile .= " permission $permission" if defined($permission);
-	$profile .= " owner $owner->[0] $owner->[1]" if defined($owner);
+    my $profile = _filecopy_f;
+    $profile .= " $directory $file_str";
+    $profile .= " permission $permission" if defined($permission);
+    $profile .= " owner $owner->[0] $owner->[1]" if defined($owner);
 
-	if ($verbose) {
-		print _filecopy_f, "--\n";
-		print "  File => [", (join ',', (map "'$_'", @$files)), "]\n";
-		print "  Directory => ", $directory, "\n";
-		print "  Permission => $permission\n" if defined($permission);
-		print "  Owner => ['$owner->[0]','$owner->[2]']\n" if defined($owner);
+    if ($verbose) {
+	print _filecopy_f, "--\n";
+	print "  File => [", (join ',', (map "'$_'", @$files)), "]\n";
+	print "  Directory => ", $directory, "\n";
+	print "  Permission => $permission\n" if defined($permission);
+	print "  Owner => ['$owner->[0]','$owner->[2]']\n" if defined($owner);
+    }
+
+    my $action = sub {
+	use File::Copy qw();
+
+	my $result;
+	for (my $i = 0; $i < @$files; ++$i) {
+	    print "syscopy $files->[$i] $product[$i]\n";
+	    if (!$preview) {
+		File::Copy::syscopy($files->[$i], $product[$i])
+		  || do { return $! };
+	    }
 	}
 
-	my $action = sub {
-		use File::Copy qw();
+	if (defined($permission)) {
+	    my $valstr = sprintf "%o", $permission;
+	    print "chmod $valstr $product_str\n";
 
-		my $result;
-		for (my $i = 0; $i < @$files; ++$i) {
-			print "syscopy $files->[$i] $product[$i]\n";
-			if (!$preview) {
-				File::Copy::syscopy($files->[$i], $product[$i])
-				  || do { return $! };
-			}
-		}
+	    if (!$preview) {
+		chmod($permission, @product) == @product
+		  || do {
+		      my $result = $!;
+		      unlink @product;
+		      return $result;
+		  };
+	    }
+	}
 
-		if (defined($permission)) {
-			my $valstr = sprintf "%o", $permission;
-			print "chmod $valstr $product_str\n";
+	if (defined($owner)) {
+	    my ($user, $group) = @$owner;
+	    my ($name, $pass);
+	    
+	    unless ($user =~ /\A\d+\Z/) {
+		($name, $pass, $user) = getpwnam($user);
+	    }
 
-		    if (!$preview) {
-				chmod($permission, @product) == @product
-				  || do {
-					  my $result = $!;
-					  unlink @product;
-					  return $result;
-				  };
-			}
-		}
+	    unless ($group =~ /\A\d+\Z/) {
+		($name, $pass, $group) = getgrnam($group);
+	    }
 
-		if (defined($owner)) {
-			my ($user, $group) = @$owner;
-			my ($name, $pass);
-			
-			unless ($user =~ /\A\d+\Z/) {
-				($name, $pass, $user) = getpwnam($user);
-			}
+	    print "chown $owner->[0] $owner->[1] $product_str\n";
 
-			unless ($group =~ /\A\d+\Z/) {
-				($name, $pass, $group) = getgrnam($group);
-			}
+	    if (!$preview) {
+		chown($user, $group, @product) == @product
+		  || do {
+		      my $result = $!;
+		      unlink @product;
+		      return $result;
+		  };
+	    }
+	}
 
-			print "chown $owner->[0] $owner->[1] $product_str\n";
+	return $result;
+    };
+    
+    push @factors, @$files;
 
-			if (!$preview) {
-				chown($user, $group, @product) == @product
-				  || do {
-					  my $result = $!;
-					  unlink @product;
-					  return $result;
-				  };
-			}
-		}
-
-		return $result;
-	};
-	
-	push @factors, @$files;
-
-	return Conjury::Core::Spell->new
-	  (Product => \@product,
-	   Factors => \@factors,
-	   Profile => $profile,
-	   Action => $action,
-	   Journal => $journal);
+    return Conjury::Core::Spell->new
+      (Product => \@product,
+       Factors => \@factors,
+       Profile => $profile,
+       Action => $action,
+       Journal => $journal);
 }
 
 =pod
@@ -1733,14 +1512,18 @@ $spell = dispell
     Factors => [ I<spell1>, I<spell2>, ... ],
     Directory => [ F<directory1>, F<directory2>, ...] # array or scalar okay
     File => [ F<file1>, F<file2>, ... ],  # array or scalar okay
+    Glob => [ F<expression1>, F<expression2>, ...] # array or scalar okay
     Require => 1;
 
 Creates a spell object that erases files or lists of files in a directory.
 
-One or both of the arguments, 'File' and 'Directory', are required.  The 'File'
-argument specifies a filename or a list of filenames to unlink with the
-'unlink' builtin function.  The 'Directory' argument specifies a directory or a
-list of directories to remove with the 'rmdir' builtin.
+At least one of the arguments, 'File', 'Glob' and 'Directory' is required.
+The 'File' argument specifies a filename or a list of filenames to unlink with
+the 'unlink' builtin function.  The 'Directory' argument specifies a directory
+or a list of directories to remove with the 'rmtree' function in File::Path.
+The 'Glob' argument specifies a filename globbing expression that is resolved
+in the action function into a list of files and directories that are dispelled
+as if they were specified in 'File' or 'Directory' argument lists.
 
 The 'Require' argument is optional.  If it is set, then the files and
 directories to be unlinked or removed are required to exist when the action is
@@ -1754,74 +1537,99 @@ Use the optional 'Journal' argument to specify a journal object for the spell.
 =cut
 
 sub dispell {
-	my %arg = @_;
-	my $error = $prototype{_dispell_f()}->validate(\%arg);
-	croak _dispell_f, "-- $error" if $error;
+    my %arg = @_;
+    my $error = $prototype{_dispell_f()}->validate(\%arg);
+    croak _dispell_f, "-- $error" if $error;
 
-	my $journal = $arg{Journal};
-	my $factors_ref = $arg{Factors};
-	my @factors = (defined $factors_ref) ? @$factors_ref : ();
-	my $file_arg = $arg{File};
-	my $directory_arg = $arg{Directory};
-	my $require = !!$arg{Require};
+    my $journal = $arg{Journal};
+    my $factors_ref = $arg{Factors};
+    my @factors = (defined $factors_ref) ? @$factors_ref : ();
+    my $file_arg = $arg{File};
+    my $directory_arg = $arg{Directory};
+    my $glob_arg = $arg{Glob};
+    my $require = !!$arg{Require};
 
-	croak _dispell_f, "-- 'File' or 'Directory' argument required"
-	  unless (defined $file_arg or defined $directory_arg);
+    croak _dispell_f, "-- 'File', 'Glob' or 'Directory' argument required"
+        unless (defined $file_arg
+                or defined $directory_arg
+                or defined $glob_arg);
 
-	my (@files, @dirs);
-	@files = (ref $file_arg) ? @$file_arg : ( $file_arg )
-	  if (defined $file_arg);
-	@dirs = (ref $directory_arg) ? @$directory_arg : ( $directory_arg )
-	  if (defined $directory_arg);
+    my (@files, @dirs, @globs);
+    @files = (ref $file_arg) ? @$file_arg : ( $file_arg )
+        if (defined $file_arg);
+    @dirs = (ref $directory_arg) ? @$directory_arg : ( $directory_arg )
+        if (defined $directory_arg);
+    @globs = (ref $glob_arg) ? @$glob_arg : ( $glob_arg )
+        if (defined $glob_arg);
 
-	my $cwd = $Current_Context->Directory;
+    my $cwd = $Current_Context->Directory;
 
-	my @abs_files = map File::Spec->catfile($cwd, $_), @files;
-	my @abs_dirs = map File::Spec->catdir($cwd, $_), @dirs;
+    my @abs_files  = map File::Spec->catfile($cwd, $_), @files;
+    my @abs_dirs   = map File::Spec->catdir($cwd, $_), @dirs;
+    my @abs_globs  = map File::Spec->catfile($cwd, $_), @globs;
 
-	my $verbose = exists $Option{'verbose'};
-	my $preview = exists $Option{'preview'};
-	my $undo = exists $Option{'undo'};
+    my $verbose = exists $Option{'verbose'};
+    my $preview = exists $Option{'preview'};
 
-	my $profile = _dispell_f;
-	$profile .= ' files '; $profile .= join(' ', @files);
-	$profile .= ' dirs '; $profile .= join(' ', @dirs);
+    my $profile = _dispell_f;
+    $profile .= ' files '; $profile .= join(' ', @files);
+    $profile .= ' dirs '; $profile .= join(' ', @dirs);
 
-	if ($verbose) {
-		print _dispell_f, "--\n";
-		print "  File => [", (join ',', (map "'$_'", @files)), "]\n";
-		print "  Directory => [", (join ',', (map "'$_'", @dirs)), "]\n";
+    if ($verbose) {
+	print _dispell_f, "--\n";
+	print "  File       => [", (join ',', (map "'$_'", @files)), "]\n";
+	print "  Directory  => [", (join ',', (map "'$_'", @dirs)), "]\n";
+	print "  Glob       => [", (join ',', (map "'$_'", @globs)), "]\n";
+    }
+
+    my $action = sub {
+        print "dispell @globs\n" if (@abs_globs);
+	print "unlink @files\n" if (@abs_files);
+	print "rmtree @dirs\n" if (@abs_dirs);
+        
+        while (@abs_globs) {
+            my @matches = glob shift @abs_globs;
+            while (@matches) {
+                my $match = shift @matches;
+                if (-d $match) {
+                    push @abs_dirs, $match;
+                }
+                else {
+                    push @abs_files, $match;
+                }
+            }
+        }
+        
+	if (!$preview) {
+	    for my $file (@abs_files) {
+		next unless ($require or -e $file);
+		unlink $file || do { return $! };
+                delete $journal->{$file} if (defined $journal);
+	    }
 	}
 
-	my $action = sub {
-		cast_error "Cannot use 'undo' with dispell." if $undo;
+	if (!$preview) {
+            local $SIG{__WARN__} = sub { die $_[0] };
+	    for my $dir (@abs_dirs) {
+		next unless ($require or -e $dir);
+		rmtree $dir, 0, 1;
+                if (defined $journal) {
+                    my $pattern = qr/\A\Q$dir\E/m;
+                    my @journaled = keys %$journal;
+                    @journaled = grep m/$pattern/, @journaled;
+                    delete $journal->{$_} for (@journaled);
+                }
+	    }
+	}
 
-		print 'unlink ', join(' ', @files), "\n" if (@abs_files > 0);
+	return 0;
+    };
 
-		if (!$preview) {
-			for my $file (@abs_files) {
-				next unless ($require or -e $file);
-				unlink $file || do { return $! };
-			}
-		}
-
-		print 'rmdir ', join(' ', @dirs), "\n" if (@abs_dirs > 0);
-
-		if (!$preview) {
-			for my $dir (@abs_dirs) {
-				next unless ($require or -e $dir);
-				rmdir $dir || do { return $! };
-			}
-		}
-
-		return 0;
-	};
-
-	return Conjury::Core::Spell->new
-	  (Journal => $journal,
-	   Factors => \@factors,
-	   Profile => $profile,
-	   Action => $action);
+    return Conjury::Core::Spell->new
+      (Journal => $journal,
+       Factors => \@factors,
+       Profile => $profile,
+       Action => $action);
 }
 
 1;

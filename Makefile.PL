@@ -30,8 +30,13 @@ require 5.005;
 use strict;
 use ExtUtils::MakeMaker;
 
+my %prereq_pm = (
+    'Digest::MD5' => 0
+);
+
 WriteMakefile
   NAME => 'Conjury-Core',
   EXE_FILES => [ 'cast' ],
   VERSION_FROM => 'lib/Conjury/Core.pm',
+  PREREQ_PM => \%prereq_pm,
   dist => { COMPRESS => 'gzip', SUFFIX => 'gz' };

@@ -1,0 +1,7 @@
+MANIFEST		This file
+README			Read about how to install the software
+LICENSE			Agree with terms before using Perl Conjury
+Makefile.PL		Perl Makefile builder
+cast			Command Line Interface
+Conjury/Core.pm		The core module of Perl Conjury
+Conjury.pod		Introductory documentation

@@ -1,0 +1,7 @@
+1999-10-04  james woodyatt  <jhw@wetware.com>
+
+	*  (ChangeLog): Added file.
+	(Core.pm): Increment VERSION to 1.002.
+	(cast Conjury.pod Makefile.PL Core.pm): Change namespace from
+	Conjure::xxxxx to Conjury::xxxxx.
+
